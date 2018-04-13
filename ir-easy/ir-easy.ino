@@ -8,6 +8,7 @@ IRsend irsend(PIN_IR);
 
 void setup() {
 
+
   pinMode(PIN_DETECT, INPUT_PULLUP);
   pinMode(LED_BUILTIN, OUTPUT);
 
