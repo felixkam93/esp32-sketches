@@ -1,4 +1,5 @@
 #include <IRremote.h>
+#include <WiFi.h>
 
 #define PIN_IR 27
 
@@ -8,8 +9,14 @@
 #define PIN_DETECT_OUTER 34 //3
 #define PIN_STATUS 5 //13
 #define PIN_STATUS_OUTER 33 //8
+#define PIN_PHOTOCELL 13
 //reduces the rate to read the sensors to every 200 ms
 #define DELAY 100
+
+const char* ssid     = "your-ssid";
+const char* password = "your-password";
+const char* host = "192.168.1.131";
+const int port = 5001;
 
 enum IR_BEAMS {NONE, INNER, OUTER };
 int state_inner;
@@ -23,6 +30,7 @@ unsigned long last_read_inner;
 unsigned long last_read_outer;
 
 int room_occupation = 1;
+boolean is_light_on = false;
 
 
 
@@ -40,6 +48,7 @@ void setup() {
   pinMode(PIN_STATUS_OUTER, OUTPUT);
   pinMode(PIN_LIGHT_ONEP, OUTPUT);
   pinMode(PIN_LIGHT_TWOP, OUTPUT);
+  pinMode(PIN_PHOTOCELL, INPUT);
 
   last_read_inner = millis();
   last_read_outer = millis();
@@ -58,10 +67,31 @@ void setup() {
   state_outer_old = HIGH;
   itr_on_inner = false;
   itr_on_outer = false;
+
+  connectToWifi();
   
   Serial.begin(9600);
   Serial.println("READY");
   delay(500);
+}
+
+void connectToWifi(){
+    Serial.println();
+    Serial.println();
+    Serial.print("Connecting to ");
+    Serial.println(ssid);
+
+    WiFi.begin(ssid, password);
+
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        Serial.print(".");
+    }
+
+    Serial.println("");
+    Serial.println("WiFi connected");
+    Serial.println("IP address: ");
+    Serial.println(WiFi.localIP());
 }
 
 void loop() {
@@ -147,7 +177,61 @@ void loop() {
     digitalWrite(PIN_LIGHT_ONEP, LOW);
   }
 
+  if(room_occupation > 0 && !is_light_on && checkBrightness()){
+    switch_light(HIGH);
+  }else if(room_occupation <= 0 && is_light_on){
+    switch_light(LOW);
+  }
   
+
+  
+}
+
+boolean checkBrightness(){
+  int photocellReading = analogRead(PIN_PHOTOCELL);
+  if(photocellReading < 200) return true;
+  return false; 
+}
+
+void  switch_light(int state){
+  if(state == HIGH){
+    performPilightCall("livingRoom1", "on");
+    //make wifi call
+    //http://192.168.1.131:5001/control?device=livingRoom1&state=on
+    is_light_on = true;
+  }else if(state == LOW){
+    performPilightCall("livingRoom1", "off");
+    is_light_on = false;
+  }
+}
+
+void performPilightCall(String device, String state){
+   WiFiClient client;
+    const int httpPort = 5001;
+    if (!client.connect(host, httpPort)) {
+        Serial.println("connection failed");
+        return;
+    }
+
+    String url = "control?device="; 
+    url += device; 
+    url += state; 
+     // This will send the request to the server
+    client.print(String("GET ") + url + " HTTP/1.1\r\n" +
+                 "Host: " + host + "\r\n" +
+                 "Connection: close\r\n\r\n");
+    unsigned long timeout = millis();
+    while (client.available() == 0) {
+        if (millis() - timeout > 5000) {
+            Serial.println(">>> Client Timeout !");
+            client.stop();
+            return;
+        }
+    }
+    while(client.available()) {
+        String line = client.readStringUntil('\r');
+        Serial.print(line);
+    }
 }
 
 
